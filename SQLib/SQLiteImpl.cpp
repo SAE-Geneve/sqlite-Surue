@@ -1,83 +1,71 @@
 #include "SQLiteImpl.h"
+
 #include <stdexcept>
-#include <iostream>
-#include <cstdlib>
 #include <algorithm>
 #include <sstream>
 
 namespace sql {
+static int Callback(void* ptr, const int ac, char** av, char** columnName)
+{
+    auto* sqliteImpl = static_cast<SQLiteImpl*>(ptr);
 
-	static int Callback(void* ptr, int ac, char** av, char** column_name) 
-	{
-		auto* sqliteImpl = static_cast<SQLiteImpl*>(ptr);
+    row_t column(ac);
 
-		column_t column(ac);
+    for (int i = 0; i < ac; i++) {
+        std::string val = av[i];
+        column[i] = {columnName[i], sqliteImpl->GetValue(val)};
+    }
 
-        for(int i = 0; i < ac; i++) {
-			std::string val = av[i];
-			column[i] = std::pair{ column_name[i], sqliteImpl->GetValue(val) };
-        }
+    sqliteImpl->table_.push_back(column);
 
-		sqliteImpl->table_.push_back(column);
+    return 0;
+}
 
-		return 0;
-	}
+SQLiteImpl::SQLiteImpl(const std::string& file)
+{
+    if (sqlite3_open(&file[0], &db_) != 0) {
+        throw std::runtime_error("error while opening db");
+    }
+}
 
-	SQLiteImpl::SQLiteImpl(const std::string& file)
-	{
-		if(sqlite3_open(&file[0], &db_) != 0) {
-			throw std::runtime_error("error while opening db");
-		}
-	}
+SQLiteImpl::~SQLiteImpl() { sqlite3_close(db_); }
 
-	SQLiteImpl::~SQLiteImpl()
-	{
-		sqlite3_close(db_);
-	}
+bool SQLiteImpl::ExecuteString(const std::string& cmd)
+{
+    //Clearing previous values
+    error_.clear();
+    table_.clear();
 
-	bool SQLiteImpl::ExecuteString(const std::string& cmd)
-	{
-        //Clearing previous values
-		error_.clear();
-		table_.clear();
+    //Pointer to store the error
+    char* errMsg;
 
-        //Pointer to store the error
-		char* errMsg;
+    //Execute command
+    if (sqlite3_exec(db_, &cmd[0], Callback, this, &errMsg) != 0) {
+        error_ = errMsg;
+        sqlite3_free(errMsg);
+        return false;
+    }
+    return true;
+}
 
-		if(sqlite3_exec(db_, &cmd[0], Callback, this, &errMsg) != 0) {
-			error_ = errMsg;
-			sqlite3_free(errMsg);
-			return false;
-		}
-		return true;
-	}
+value_t SQLiteImpl::GetValue(const std::string& str) const
+{
+    //Test if is null.
+    if (str.empty()) { return nullptr; }
 
-	sql::value_t SQLiteImpl::GetValue(const std::string& str) const
-	{
-        //Test if is null.
-        if(str.empty()) {
-			return nullptr;
-        }
+    std::istringstream ss(str);
 
-        //Test if is an int.
-		std::istringstream ssi(str);
+    //Test if is an int.
+    int64_t i;
+    ss >> i;
+    if (!ss.fail() && ss.eof()) { return i; }
 
-		int64_t i;
-		ssi >> i;
-		if (!ssi.fail() && ssi.eof()) {
-			return i;
-		}
+    //Test if is a double.
+    double d;
+    ss >> d;
+    if (!ss.fail() && ss.eof()) { return d; }
 
-        //Test if is a double.
-		std::istringstream ssd(str);
-		double d;
-		ssd >> d;
-        if(!ssd.fail() && ssd.eof()) {
-			return d;
-        }
-
-        //It's a string
-		return str;
-	}
-
-} // End namespace sql.
+    //It's a string
+    return str;
+}
+} // namespace sql
