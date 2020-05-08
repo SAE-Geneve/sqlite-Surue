@@ -11,8 +11,7 @@ namespace sql {
 		SQLiteImpl(const std::string& file);
 		virtual ~SQLiteImpl();
 
-	public:
-		bool ExecuteString(const std::string& string) override;
+		bool ExecuteString(const std::string& cmd) override;
 
 	public:
 		const std::string& GetError() const override { return error_; }
